@@ -1,0 +1,20 @@
+[Unit]
+Description=HandheldDietScanner Allergen Detection System
+After=graphical.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/HandheldDietScanner
+Environment="DISPLAY=:0"
+Environment="SDL_VIDEODRIVER=fbcon"
+ExecStart=/usr/bin/python3 /home/pi/HandheldDietScanner/main.py
+Restart=always
+RestartSec=10
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+# HandheldDietScanner Dependencies
+# Core dependencies
+pygame>=2.1.0
+
+# Optional dependencies for Raspberry Pi hardware
+# picamera2>=0.3.0  # Uncomment for Raspberry Pi Camera support
+# numpy>=1.20.0     # Required for camera image processing
+
+# Optional ML dependencies (for computer vision allergen detection)
+# tensorflow>=2.8.0  # Uncomment for ML-based detection
+# opencv-python>=4.5.0  # Uncomment for OpenCV image processing
+
+# Development dependencies
+# pytest>=7.0.0  # For running tests

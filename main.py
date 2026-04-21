@@ -1,372 +1,251 @@
+"""
+HandheldDietScanner - Main Application Entry Point
+A modular allergen detection system for Raspberry Pi Zero 2W
+"""
+
 import pygame
-import os
+import sys
 
-width, height = 480, 320 # 480 x 320
-fps = 30 # reduce number of times ran, save power
-backgroundColor = (0, 0, 0) # like a navy color
-whiteColor = (255, 255, 255)
+from config import (
+    SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, 
+    PREPARE_SCAN_DURATION, DEFAULT_PROFILES
+)
+from ui.screens import (
+    HomeScreen, WaitingToScanScreen, SettingsScreen,
+    AllergyProfileScreen, PreparingToScanScreen, ResultsScreen
+)
+from ui.components import UserProfile as UIUserProfile
+from services.profile_manager import ProfileManager, UserProfile as ServiceUserProfile
+from services.scan_processor import ScanProcessor
+from services.data_storage import DataStorage
+from hardware.display import DisplayController
+from hardware.camera import MockCamera
+from hardware.sensor import MockSensor
+from utils.logger import setup_logger, get_logger
+from utils.power_manager import PowerManager
 
-class UserProfile:
-  def __init__(self, xPos, yPos, profileName, profileImage):
-    baseImage = pygame.image.load(profileImage).convert() # convert to be 16 bit color
-    self.image = pygame.transform.scale(baseImage, (200, 200)) # make both images same size
-    self.name = profileName
-    self.allergies = []
-    self.imageRect = self.image.get_rect(topleft=(xPos, yPos)) # place image in desired spot
-    # make nametag for image
-    font = font = pygame.font.SysFont(None, 40) # default 40 pt font
-    textSurface = font.render(self.name, True, whiteColor)
-    self.nameTag = textSurface.convert_alpha() # make text box an image
-    self.textRect = self.nameTag.get_rect(midtop=(self.imageRect.centerx, self.imageRect.bottom + 10))
 
-  def drawProfile(self, screen):
-    # draw image + name tag
-    screen.blit(self.image, self.imageRect)
-    screen.blit(self.nameTag, self.textRect)
-
-  def isClicked(self, mousePosClicked):
-    return self.imageRect.collidepoint(mousePosClicked)
-  
-class HomeScreen:
-  def __init__(self):
-    self.profileOne = UserProfile(20, 55, "Bruce", "images/mcqueen.jpeg") # make profile 1
-    self.profileTwo = UserProfile(260, 55, "Ramona", "images/minniemouse.jpg") # make profile 2
-
-  def drawScreen(self, screen):
-    # draw both profiles
-    self.profileOne.drawProfile(screen)
-    self.profileTwo.drawProfile(screen)
-
-  def userAction(self, event):
-    if event.type == pygame.MOUSEBUTTONDOWN: # if tap on screen
-      if self.profileOne.isClicked(event.pos) or self.profileTwo.isClicked(event.pos):
-        return "SCAN" # new state 
-    return "HOME" # original state
-  
-class WaitingToScanScreen: 
-  def __init__(self):
-    self.scanIcon = Button(60, 100, 360, 160, "START SCAN", (0, 150, 0)) # scan button
-    self.settingsIcon = SettingsButton(width - 60, 0, "images/settingsIcon.png")
-    self.homeIcon = HomeButton(0, 0, "images/homeIcon.png")
-    self.font = pygame.font.SysFont(None, 36) # make font for profile name User: XX
-
-  def getProfile(self, profileName):
-    self.name = f"User: {profileName}"
-    self.nameSurface = self.font.render(self.name, True, whiteColor)
-    self.nameRect = self.nameSurface.get_rect(center=(width // 2, 35)) # place at top middle
-  
-  def drawScreen(self, screen):
-    self.scanIcon.draw(screen) # draw all icons
-    self.settingsIcon.drawSettingsIcon(screen)
-    self.homeIcon.drawHomeIcon(screen)
-    screen.blit(self.nameSurface, self.nameRect)
-
-  def userAction(self, event):
-    if event.type == pygame.MOUSEBUTTONDOWN: # for which icon clicked, else do nothhing and return SCAN
-      if self.settingsIcon.isClicked(event.pos): 
-        return "SETTINGS"
-      if self.homeIcon.isClicked(event.pos):
-        return "HOME"
-      if self.scanIcon.isClicked(event.pos):
-        return "PREPARE"
-    return "SCAN"
-  
-class SettingsButton: 
-  def __init__(self, xPos, yPos, settingsImage):
-    baseImage = pygame.image.load(settingsImage).convert_alpha() # alpha b/c transparent
-    self.settingsIcon = pygame.transform.scale(baseImage, (60, 60))
-    self.settingsRect = self.settingsIcon.get_rect(topleft=(xPos, yPos))
+class HandheldDietScanner:
+    """Main application class for HandheldDietScanner"""
     
-  def drawSettingsIcon(self, screen):
-    screen.blit(self.settingsIcon, self.settingsRect)
+    def __init__(self):
+        # Setup logging
+        self.logger = setup_logger()
+        self.logger.info("Initializing HandheldDietScanner")
+        
+        # Initialize services
+        self.profile_manager = ProfileManager()
+        self.data_storage = DataStorage()
+        self.scan_processor = ScanProcessor(
+            camera=MockCamera(),  # Can be replaced with PiCameraInterface
+            sensor=MockSensor(),  # Can be replaced with real sensor
+            data_storage=self.data_storage
+        )
+        
+        # Initialize hardware
+        self.display = DisplayController(SCREEN_WIDTH, SCREEN_HEIGHT)
+        
+        # Initialize power manager
+        self.power_manager = PowerManager()
+        self.power_manager.set_wake_callback(self._on_wake)
+        self.power_manager.set_sleep_callback(self._on_sleep)
+        
+        # Application state
+        self.current_screen = None
+        self.state = "HOME"
+        self.profile_selected = None
+        self.run = True
+        
+        self.logger.info("HandheldDietScanner initialized successfully")
     
-  def isClicked(self, mousePosClicked):
-    return self.settingsRect.collidepoint(mousePosClicked)
-  
-class HomeButton:
-  def __init__(self, xPos, yPos, homeImage):
-    # same logic as settings button just diff image
-    baseImage = pygame.image.load(homeImage).convert_alpha()
-    self.homeIcon = pygame.transform.scale(baseImage, (60, 60))
-    self.homeRect = self.homeIcon.get_rect(topleft=(xPos, yPos))
+    def _sync_profiles(self):
+        """Sync UI profiles with profile manager data"""
+        profiles = self.profile_manager.get_profiles()
+        
+        # Update home screen profiles
+        if len(profiles) >= 2:
+            # Update existing profiles
+            self.home_screen.profileOne.name = profiles[0].name
+            self.home_screen.profileOne.allergies = profiles[0].allergies
+            self.home_screen.profileTwo.name = profiles[1].name
+            self.home_screen.profileTwo.allergies = profiles[1].allergies
     
-  def drawHomeIcon(self, screen):
-    screen.blit(self.homeIcon, self.homeRect)
+    def _on_wake(self):
+        """Callback when system wakes from sleep"""
+        self.logger.info("System waking up")
+        # Restore display brightness, etc.
     
-  def isClicked(self, mousePosClicked):
-    return self.homeRect.collidepoint(mousePosClicked)
-  
-class Button:
-  def __init__(self, xPos, yPos, width, height, buttonTitle, color):
-    # general button that is a shape, not an image
-    self.scanRect = pygame.Rect(xPos, yPos, width, height)
-    self.text= buttonTitle # given text
-    self.color = color
-    self.font = pygame.font.SysFont(None, 40)
-    self.textSurface = self.font.render(self.text, True, whiteColor)
-    self.textInButton = self.textSurface.get_rect(center=self.scanRect.center)
-     
-  def draw(self, screen):
-    pygame.draw.rect(screen, self.color, self.scanRect, border_radius=10)
-    screen.blit(self.textSurface, self.textInButton)
-
-  def isClicked(self, mousePosClicked):
-    return self.scanRect.collidepoint(mousePosClicked)
-
-class SettingsScreen:
-  def __init__(self):
-    self.font = pygame.font.SysFont(None, 40)
-    self.settingsTitle = self.font.render("DEVICE SETTINGS", True, whiteColor)
-    self.titleRect = self.settingsTitle.get_rect(center=(width // 2, 35))
-
-    self.backButton = Button(60, 200, 360, 80, "BACK TO SCAN", (100, 100, 100))
-    self.allergyProfileButton = Button(60, 100, 360, 80, "EDIT ALLERGY PROFILE", (15, 109, 3))
-    self.homeIcon = HomeButton(0, 0, "images/homeIcon.png")
-  
-  def drawScreen(self, screen):
-    screen.blit(self.settingsTitle, self.titleRect)
-    self.backButton.draw(screen)
-    self.allergyProfileButton.draw(screen)
-    self.homeIcon.drawHomeIcon(screen)
-      
-  def userAction(self, event):
-    if event.type ==  pygame.MOUSEBUTTONDOWN:
-      if self.allergyProfileButton.isClicked(event.pos):
-        return "ALLERGY"
-      elif self.backButton.isClicked(event.pos):
-        return "SCAN"
-      elif self.homeIcon.isClicked(event.pos):
-        return "HOME"
-    return "SETTINGS"    
-
-class AllergyProfileScreen:
-  def __init__(self):
-    self.titleFont = pygame.font.SysFont(None, 35)
-    self.allergyFont = pygame.font.SysFont(None, 45)
-    self.allAllergens = ["Milk", "Eggs", "Shellfish", "Nuts", "Wheat", "Soy", "Gluten", "Sesame"]
-    self.saveButton = Button(350, 10, 120, 50, "SAVE", (0, 150, 0))
-    self.homeIcon = HomeButton(0, 0, "images/homeIcon.png")
-  
-  def drawScreen(self, screen, profileName):
-    title = self.titleFont.render(f"Editing: {profileName.name}", True, whiteColor)
-    screen.blit(title, (100, 25))
-
-    self.optionsSelectedRect = []
-    for i, option in enumerate(self.allAllergens):
-      column = i // 4 # first 4 allergens on left, other 4 on right
-      row = i % 4
-      xPos = 30 + (column * 240)
-      yPos = 85 + (row * 55)
-
-      checkBoxRect = pygame.Rect(xPos, yPos, 40, 40)
-      self.optionsSelectedRect.append((checkBoxRect, option))
-
-      if option in profileName.allergies:
-        pygame.draw.rect(screen, (0, 200, 0), checkBoxRect, border_radius=5)
-      else:
-        pygame.draw.rect(screen, (150, 150, 150), checkBoxRect, border_radius=5)
-      
-      allergenText = self.allergyFont.render(option, True, whiteColor)
-      screen.blit(allergenText, (xPos + 55, yPos + 5))
-    self.saveButton.draw(screen)
-    self.homeIcon.drawHomeIcon(screen)
-
-  def userAction(self, event, profileName):
-    if event.type == pygame.MOUSEBUTTONDOWN:
-      for box, allergen in self.optionsSelectedRect:
-        if not box.collidepoint(event.pos):
-          continue
-        if allergen in profileName.allergies:
-          profileName.allergies.remove((allergen))
+    def _on_sleep(self):
+        """Callback when system enters sleep mode"""
+        self.logger.info("System entering sleep mode")
+        # Reduce display brightness, etc.
+    
+    def handle_events(self):
+        """Handle pygame events"""
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                self.run = False
+                return
+            
+            # Record activity for power management
+            if event.type in (pygame.MOUSEBUTTONDOWN, pygame.KEYDOWN):
+                self.power_manager.record_activity()
+            
+            # Handle screen-specific events
+            if self.state == "ALLERGY" or self.state == "RESULTS":
+                new_state = self.current_screen.userAction(event, self.profile_selected)
+            else:
+                new_state = self.current_screen.userAction(event)
+            
+            if new_state != self.state:
+                self.transition_to_state(new_state, event)
+    
+    def transition_to_state(self, new_state: str, event=None):
+        """Transition to a new application state"""
+        if new_state == "HOME":
+            self.current_screen = self.home_screen
+            self.profile_selected = None
+            
+        elif new_state == "SCAN":
+            if self.state == "HOME":
+                # Determine which profile was selected
+                if event and hasattr(event, 'pos'):
+                    if self.home_screen.profileOne.isClicked(event.pos):
+                        self.profile_selected = self.home_screen.profileOne
+                    elif self.home_screen.profileTwo.isClicked(event.pos):
+                        self.profile_selected = self.home_screen.profileTwo
+            
+            if self.profile_selected:
+                self.scan_screen.getProfile(self.profile_selected.name)
+            self.current_screen = self.scan_screen
+            
+        elif new_state == "PREPARE":
+            if self.profile_selected:
+                # Get demo image based on profile name
+                profile = self.profile_manager.get_profile_by_name(self.profile_selected.name)
+                if profile:
+                    preset_image = profile.demo_scan_image
+                else:
+                    preset_image = "ui/assets/reesesImage.jpg" if self.profile_selected.name == "Bruce" else "ui/assets/hershey.jpg"
+                
+                self.preparing_screen.updateImage(preset_image)
+                self.results_screen.updateImage(preset_image)
+                self.preparing_screen.resetTimer()
+            self.current_screen = self.preparing_screen
+            
+        elif new_state == "SETTINGS":
+            self.current_screen = self.settings_screen
+            
+        elif new_state == "ALLERGY":
+            self.current_screen = self.allergy_screen
+        
+        self.state = new_state
+    
+    def update(self):
+        """Update game logic"""
+        # Check for preparation timer
+        if self.state == "PREPARE":
+            if self.preparing_screen.timer >= PREPARE_SCAN_DURATION:
+                self.state = "RESULTS"
+                self.current_screen = self.results_screen
+        
+        # Check for idle/sleep
+        if self.power_manager.check_idle():
+            # System is sleeping, could skip rendering or reduce FPS
+            pass
+    
+    def render(self):
+        """Render the current screen"""
+        screen = self.display.get_screen()
+        screen.fill(COLOR_BLACK)
+        
+        if self.state == "ALLERGY" or self.state == "RESULTS":
+            self.current_screen.drawScreen(screen, self.profile_selected)
         else:
-          profileName.allergies.append(allergen)
-      if self.saveButton.isClicked(event.pos):
-        return "SETTINGS"
-      if self.homeIcon.isClicked(event.pos):
-        return "HOME"
-    return "ALLERGY"
-  
-class PreparingToScanScreen:
-  def __init__(self):
-    self.font = pygame.font.SysFont(None, 60)
-    self.text = self.font.render("PREPARING SCAN...", True, whiteColor)
-    self.timer = 0
-    self.image = None
-    self.imageRect = None
-
-  def updateImage(self, imgPath):
-    baseImage = pygame.image.load(imgPath).convert()
-    self.image = pygame.transform.scale(baseImage, (480, height - 60))
-    self.imageRect = self.image.get_rect(midbottom=(width // 2, height))
-  
-  def drawScreen(self, screen):
-    if self.image:
-      screen.blit(self.image, self.imageRect)
-    screen.blit(self.text, (width // 2 - self.text.get_width() // 2, 10))
-    self.timer += 1
-
-  def userAction(self, event):
-    return "PREPARE"
-  def resetTimer(self):
-    self.timer = 0
-
-class ResultsScreen:
-  def __init__(self):
-    self.bigFont = pygame.font.SysFont(None, 45)
-    self.homeIcon = HomeButton(0, 0, "images/homeIcon.png")
-    
-    # State: 0 = Normal, 1 = Fullscreen, 2 = Magnified
-    self.zoomLevel = 0 
-    self.baseImage = None 
-    self.displayImage = None
-    self.fullImage = None
-    self.magImage = None
-    self.magRect = None
-
-  def updateImage(self, imgPath):
-    # load orig image
-    self.baseImage = pygame.image.load(imgPath).convert()
-    
-    # standard view of image, with text at top
-    self.displayImage = pygame.transform.scale(self.baseImage, (480, height - 60))
-    self.imgRect = self.displayImage.get_rect(midbottom=(width // 2, height))
-    
-    # fullscreen view of image, fills screen
-    self.fullImage = pygame.transform.scale(self.baseImage, (480, 320))
-    self.fullRect = self.fullImage.get_rect(topleft=(0, 0))
-    
-    # 4. magnify image, size is now 960 x 640
-    self.magImage = pygame.transform.scale(self.baseImage, (960, 640))
-
-  def drawScreen(self, screen, profileSelected):
-    if self.zoomLevel == 0:
-      if profileSelected.name == "Bruce":
-        screen.fill((180, 0, 0))
-      self.homeIcon.drawHomeIcon(screen)
-      if self.displayImage:
-        screen.blit(self.displayImage, self.imgRect)
-      
-      msg_text = "ALLERGEN DETECTED!" if profileSelected.name == "Bruce" else "NO ALLERGENS"
-      msg = self.bigFont.render(msg_text, True, (255, 255, 0) if profileSelected.name == "Bruce" else (0, 255, 0))
-      screen.blit(msg, (width // 2 - msg.get_width() // 2, 15))
-
-    elif self.zoomLevel == 1:
-      # FULLSCREEN
-      screen.blit(self.fullImage, self.fullRect)
-
-    elif self.zoomLevel == 2:
-      # MAGNIFIED at specific tap location
-      screen.blit(self.magImage, self.magRect)
-
-  def userAction(self, event, profileSelected):
-    if event.type == pygame.MOUSEBUTTONDOWN:
-      if self.zoomLevel == 0:
-        if self.imgRect.collidepoint(event.pos):
-          self.zoomLevel = 1
-          return "RESULTS"
-        elif self.homeIcon.isClicked(event.pos):
-          return "HOME"
-      
-      elif self.zoomLevel == 1:
-        # get two pos to edit x and y
-        tapX, tapY = event.pos
-      
-        self.magRect = self.magImage.get_rect(center=(width // 2, height // 2))
-        #calculates how far away finger is from center of screen
-        # width //2 = 240, if tap at 100,. offetX is 140. finger is 140 pixels to left of center, image must be pulled 140 to right
-        offsetX = (width // 2) - tapX
-        offsetY = (height // 2) - tapY
+            self.current_screen.drawScreen(screen)
         
-        self.magRect.centerx += offsetX * 2
-        self.magRect.centery += offsetY * 2
+        # Show idle warning if about to sleep
+        remaining = self.power_manager.get_remaining_idle_time()
+        if 0 < remaining < 10 and not self.power_manager.is_sleeping:
+            self._draw_idle_warning(screen, remaining)
         
-        # make sure image is fully on screen, only show imagw when zoom
-        if self.magRect.left > 0: self.magRect.left = 0
-        if self.magRect.right < width: self.magRect.right = width
-        if self.magRect.top > 0: self.magRect.top = 0
-        if self.magRect.bottom < height: self.magRect.bottom = height
+        self.display.update_display()
+    
+    def _draw_idle_warning(self, screen, remaining_time: float):
+        """Draw idle warning message"""
+        font = pygame.font.SysFont(None, 24)
+        text = font.render(f"Sleeping in {int(remaining_time)} seconds...", True, (255, 255, 0))
+        screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, SCREEN_HEIGHT - 30))
+    
+    def _init_screens(self):
+        """Initialize UI screens after display is ready"""
+        self.home_screen = HomeScreen()
+        self.scan_screen = WaitingToScanScreen()
+        self.settings_screen = SettingsScreen()
+        self.allergy_screen = AllergyProfileScreen()
+        self.preparing_screen = PreparingToScanScreen()
+        self.results_screen = ResultsScreen()
         
-        self.zoomLevel = 2
-        return "RESULTS"
-      
-      elif self.zoomLevel == 2:
-        # Tap again to go back to normal
-        self.zoomLevel = 0
-        return "RESULTS"
+        # Set initial screen
+        self.current_screen = self.home_screen
         
-    return "RESULTS"
+        # Sync UI profiles with service profiles
+        self._sync_profiles()
+        
+        self.logger.info("UI screens initialized")
+    
+    def _sync_profiles(self):
+        """Sync UI profiles with profile manager data"""
+        profiles = self.profile_manager.get_profiles()
+        
+        # Update home screen profiles
+        if len(profiles) >= 2:
+            # Update existing profiles
+            self.home_screen.profileOne.name = profiles[0].name
+            self.home_screen.profileOne.allergies = profiles[0].allergies
+            self.home_screen.profileTwo.name = profiles[1].name
+            self.home_screen.profileTwo.allergies = profiles[1].allergies
+    
+    def run_application(self):
+        """Main application loop"""
+        if not self.display.init_display():
+            self.logger.error("Failed to initialize display")
+            return False
+        
+        # Initialize screens after display is ready
+        self._init_screens()
+        
+        self.logger.info("Starting main loop")
+        
+        while self.run:
+            self.handle_events()
+            self.update()
+            self.render()
+            self.display.tick()
+        
+        self.shutdown()
+        return True
+    
+    def shutdown(self):
+        """Clean shutdown"""
+        self.logger.info("Shutting down HandheldDietScanner")
+        self.display.shutdown()
+        pygame.quit()
+        self.logger.info("Shutdown complete")
+
 
 def main():
-  pygame.init()
-  screen = pygame.display.set_mode((width, height), 0, 16) # 16 bits for color b/c 65k colors
-  clock = pygame.time.Clock()
+    """Entry point function"""
+    try:
+        app = HandheldDietScanner()
+        success = app.run_application()
+        return 0 if success else 1
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
-  homeScreen = HomeScreen()
-  scanScreen = WaitingToScanScreen() 
-  settingsScreen = SettingsScreen()
-  allergyScreen = AllergyProfileScreen()
-  preparingScanScreen = PreparingToScanScreen()
-  resultsScreen = ResultsScreen()
 
-  currentScreen = homeScreen
-  state = "HOME"
-  profileSelected = None
-
-  run = True
-
-  while run:
-    if state == "PREPARE":
-        if currentScreen.timer>= 60 :
-          state = "RESULTS"
-          currentScreen = resultsScreen
-
-    for event in pygame.event.get():
-      if event.type == pygame.QUIT:
-        run = False
-      
-      if state == "ALLERGY" or state == "RESULTS":
-        newState = currentScreen.userAction(event, profileSelected)
-      else:
-         newState = currentScreen.userAction(event)
-
-      if newState != state: 
-        if newState == "HOME":
-          currentScreen =  homeScreen
-        elif newState == "SCAN":
-          if state == "HOME":
-            if homeScreen.profileOne.isClicked(event.pos):
-              profileSelected = homeScreen.profileOne
-            else:
-              profileSelected = homeScreen.profileTwo
-            scanScreen.getProfile(profileSelected.name)
-          if profileSelected:
-            scanScreen.getProfile(profileSelected.name)
-          currentScreen =  scanScreen
-        elif newState == "PREPARE":
-          if profileSelected.name == "Bruce":
-            presetImage = "images/reesesImage.jpg"
-          else:
-            presetImage = "images/hershey.jpg"
-          preparingScanScreen.updateImage(presetImage)
-          resultsScreen.updateImage(presetImage)
-          preparingScanScreen.resetTimer()
-          currentScreen = preparingScanScreen
-        elif newState == "SETTINGS":
-          currentScreen = settingsScreen
-        elif newState == "ALLERGY":
-          currentScreen = allergyScreen
-        state = newState
- 
-    screen.fill(backgroundColor) # draw background and user profiles
-    if state == "ALLERGY" or state == "RESULTS": 
-      currentScreen.drawScreen(screen, profileSelected)
-    else:
-      currentScreen.drawScreen(screen)
-    
-    pygame.display.flip()
-    clock.tick(fps)
-  
-  pygame.quit()
-  
-if __name__ == "__main__":  
-  main()
+if __name__ == "__main__":
+    sys.exit(main())
