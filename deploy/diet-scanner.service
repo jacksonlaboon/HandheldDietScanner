@@ -9,12 +9,12 @@ User=sbangapadang
 WorkingDirectory=/home/sbangapadang/HandheldDietScanner
 # Waveshare 3.5" uses the secondary framebuffer (fb1) under the fbtft driver
 Environment="SDL_VIDEODRIVER=fbcon"
-Environment="SDL_FBDEV=/dev/fb1"
-Environment="SDL_MOUSEDEV=/dev/input/touchscreen"
+Environment="SDL_FBDEV=/dev/fb0"
+Environment="SDL_MOUSEDEV=/dev/input/event2"
 Environment="SDL_MOUSEDRV=TSLIB"
 # TSLIB: tell the library where the raw touch device and calibration file are
-Environment="TSLIB_TSDEVICE=/dev/input/touchscreen"
-Environment="TSLIB_FBDEV=/dev/fb1"
+Environment="TSLIB_TSDEVICE=/dev/input/event2"
+Environment="TSLIB_FBDEV=/dev/fb0"
 Environment="TSLIB_CALIBFILE=/etc/pointercal"
 ExecStart=/home/sbangapadang/HandheldDietScanner/venv/bin/python /home/sbangapadang/HandheldDietScanner/main.py
 Restart=always

@@ -45,7 +45,7 @@ sudo apt-get install -y python3-opencv
 
 # Resistive touch support (Waveshare 3.5" uses tslib/evdev)
 echo "Installing touch screen support..."
-sudo apt-get install -y libts-dev tslib evtest
+sudo apt-get install -y libts-dev libts-bin evtest
 
 # ---------------------------------------------------------------------------
 # Waveshare 3.5" SPI display driver (ili9486 / fbtft)
@@ -136,9 +136,9 @@ TSCONF_EOF
 # These are written to /etc/environment so they are available system-wide
 # (the service unit also sets them explicitly for safety).
 if ! grep -q "TSLIB_TSDEVICE" /etc/environment 2>/dev/null; then
-    echo 'TSLIB_TSDEVICE=/dev/input/touchscreen' | sudo tee -a /etc/environment
-    echo 'TSLIB_FBDEV=/dev/fb1'                  | sudo tee -a /etc/environment
-    echo 'TSLIB_CALIBFILE=/etc/pointercal'        | sudo tee -a /etc/environment
+    echo 'TSLIB_TSDEVICE=/dev/input/event2'  | sudo tee -a /etc/environment
+    echo 'TSLIB_FBDEV=/dev/fb0'              | sudo tee -a /etc/environment
+    echo 'TSLIB_CALIBFILE=/etc/pointercal'   | sudo tee -a /etc/environment
 fi
 
 # ---------------------------------------------------------------------------
