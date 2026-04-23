@@ -112,10 +112,12 @@ echo "Installing udev rule for /dev/input/touchscreen..."
 UDEV_RULE=/etc/udev/rules.d/95-waveshare-touch.rules
 sudo tee "$UDEV_RULE" > /dev/null <<'UDEV_EOF'
 # Waveshare 3.5" resistive touchscreen (ADS7846 / SPI)
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="ADS7846 Touchscreen", SYMLINK+="input/touchscreen"
+# Match on the SPI bus path so the rule fires even if the name attribute
+# is not visible from the event node's parent chain.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{phys}=="spi0.1/input0", SYMLINK+="input/touchscreen", MODE="0660", GROUP="input"
 UDEV_EOF
 sudo udevadm control --reload-rules
-sudo udevadm trigger
+sudo udevadm trigger /sys/class/input/event2 2>/dev/null || sudo udevadm trigger
 
 # ---------------------------------------------------------------------------
 # TSLIB configuration
