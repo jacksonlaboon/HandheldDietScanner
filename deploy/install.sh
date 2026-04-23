@@ -137,7 +137,7 @@ TSCONF_EOF
 # (the service unit also sets them explicitly for safety).
 if ! grep -q "TSLIB_TSDEVICE" /etc/environment 2>/dev/null; then
     echo 'TSLIB_TSDEVICE=/dev/input/touchscreen' | sudo tee -a /etc/environment
-    echo 'TSLIB_FBDEV=/dev/fb1'                  | sudo tee -a /etc/environment
+    echo 'TSLIB_FBDEV=/dev/fb0'                  | sudo tee -a /etc/environment
     echo 'TSLIB_CALIBFILE=/etc/pointercal'        | sudo tee -a /etc/environment
 fi
 
@@ -230,7 +230,7 @@ echo "│                                                                 │"
 echo "│  2. CALIBRATE TOUCH (once, after reboot) — resistive screens   │"
 echo "│     must be calibrated or tap coordinates will be wrong:       │"
 echo "│       TSLIB_TSDEVICE=/dev/input/touchscreen \                  │"
-echo "│       TSLIB_FBDEV=/dev/fb1 \                                   │"
+echo "│       TSLIB_FBDEV=/dev/fb0 \                                   │"
 echo "│       TSLIB_CALIBFILE=/etc/pointercal \                        │"
 echo "│       sudo -E ts_calibrate                                     │"
 echo "│     Follow the on-screen prompts (tap each crosshair).         │"
