@@ -7,7 +7,7 @@ import pygame
 import sys
 
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, 
+    SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, COLOR_LIGHT_YELLOW,
     PREPARE_SCAN_DURATION, DEFAULT_PROFILES
 )
 from ui.screens import (
@@ -19,7 +19,7 @@ from services.profile_manager import ProfileManager, UserProfile as ServiceUserP
 from services.scan_processor import ScanProcessor
 from services.data_storage import DataStorage
 from hardware.display import DisplayController
-from hardware.camera import MockCamera
+from hardware.camera import MockCamera, PiCameraInterface
 from hardware.sensor import MockSensor
 from utils.logger import setup_logger, get_logger
 from utils.power_manager import PowerManager
@@ -36,9 +36,11 @@ class HandheldDietScanner:
         # Initialize services
         self.profile_manager = ProfileManager()
         self.data_storage = DataStorage()
+        # Use PiCameraInterface on real hardware; it silently falls back to
+        # MockCamera if picamera2 is not available (e.g. dev workstation).
         self.scan_processor = ScanProcessor(
-            camera=MockCamera(),  # Can be replaced with PiCameraInterface
-            sensor=MockSensor(),  # Can be replaced with real sensor
+            camera=PiCameraInterface(),
+            sensor=MockSensor(),
             data_storage=self.data_storage
         )
         
@@ -55,20 +57,10 @@ class HandheldDietScanner:
         self.state = "HOME"
         self.profile_selected = None
         self.run = True
+        # Holds the last live frame captured during the preparation countdown
+        self._last_live_frame: object = None
         
         self.logger.info("HandheldDietScanner initialized successfully")
-    
-    def _sync_profiles(self):
-        """Sync UI profiles with profile manager data"""
-        profiles = self.profile_manager.get_profiles()
-        
-        # Update home screen profiles
-        if len(profiles) >= 2:
-            # Update existing profiles
-            self.home_screen.profileOne.name = profiles[0].name
-            self.home_screen.profileOne.allergies = profiles[0].allergies
-            self.home_screen.profileTwo.name = profiles[1].name
-            self.home_screen.profileTwo.allergies = profiles[1].allergies
     
     def _on_wake(self):
         """Callback when system wakes from sleep"""
@@ -120,20 +112,34 @@ class HandheldDietScanner:
             self.current_screen = self.scan_screen
             
         elif new_state == "PREPARE":
+            self._last_live_frame = None
             if self.profile_selected:
-                # Get demo image based on profile name
-                profile = self.profile_manager.get_profile_by_name(self.profile_selected.name)
-                if profile:
-                    preset_image = profile.demo_scan_image
+                if isinstance(self.scan_processor.camera, MockCamera):
+                    # No real camera: pre-load the demo image for both screens
+                    profile = self.profile_manager.get_profile_by_name(self.profile_selected.name)
+                    preset_image = (
+                        profile.demo_scan_image if profile
+                        else (
+                            "ui/assets/reesesImage.jpg"
+                            if self.profile_selected.name == "Bruce"
+                            else "ui/assets/hershey.jpg"
+                        )
+                    )
+                    self.preparing_screen.updateImage(preset_image)
+                    self.results_screen.updateImage(preset_image)
                 else:
-                    preset_image = "ui/assets/reesesImage.jpg" if self.profile_selected.name == "Bruce" else "ui/assets/hershey.jpg"
-                
-                self.preparing_screen.updateImage(preset_image)
-                self.results_screen.updateImage(preset_image)
+                    # Real camera: start the stream; frames arrive in update()
+                    self.scan_processor.camera.start()
                 self.preparing_screen.resetTimer()
             self.current_screen = self.preparing_screen
             
         elif new_state == "SETTINGS":
+            # Persist allergy edits when returning from the allergy editor
+            if self.state == "ALLERGY" and self.profile_selected is not None:
+                self.profile_manager.update_allergies(
+                    self.profile_selected.name,
+                    list(self.profile_selected.allergies)
+                )
             self.current_screen = self.settings_screen
             
         elif new_state == "ALLERGY":
@@ -143,21 +149,38 @@ class HandheldDietScanner:
     
     def update(self):
         """Update game logic"""
-        # Check for preparation timer
         if self.state == "PREPARE":
+            # Grab a live frame every tick for the Digital Loupe viewfinder
+            live_frame = self.scan_processor.camera.get_live_frame()
+            if live_frame is not None:
+                self._last_live_frame = live_frame
+                self.preparing_screen.updateSurface(live_frame)
+
             if self.preparing_screen.timer >= PREPARE_SCAN_DURATION:
+                # Stop the camera stream, run OCR on the last captured frame,
+                # and push both the image and the allergen results to ResultsScreen.
+                self.scan_processor.camera.stop()
+                if self.profile_selected is not None:
+                    result = self.scan_processor.execute_scan(
+                        profile_name=self.profile_selected.name,
+                        use_camera=False,
+                        frame=self._last_live_frame
+                    )
+                    self.results_screen.allergens_detected = result.allergens_detected
+                    # Update the results image from the live frame when available
+                    if self._last_live_frame is not None:
+                        self.results_screen.updateSurface(self._last_live_frame)
                 self.state = "RESULTS"
                 self.current_screen = self.results_screen
-        
+
         # Check for idle/sleep
         if self.power_manager.check_idle():
-            # System is sleeping, could skip rendering or reduce FPS
             pass
     
     def render(self):
         """Render the current screen"""
         screen = self.display.get_screen()
-        screen.fill(COLOR_BLACK)
+        screen.fill(COLOR_LIGHT_YELLOW)
         
         if self.state == "ALLERGY" or self.state == "RESULTS":
             self.current_screen.drawScreen(screen, self.profile_selected)

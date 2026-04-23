@@ -121,6 +121,8 @@ celerybeat.pid
 # Serverless
 .serverless/
 
+.local_md/
+
 # Images (if they're generated/cached)
 # Note: Keeping original product images, but ignoring any generated thumbnails
 images/thumbnails/

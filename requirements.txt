@@ -2,13 +2,19 @@
 # Core dependencies
 pygame>=2.1.0
 
-# Optional dependencies for Raspberry Pi hardware
-# picamera2>=0.3.0  # Uncomment for Raspberry Pi Camera support
-# numpy>=1.20.0     # Required for camera image processing
+# Raspberry Pi camera support (picamera2 is installed system-wide on Pi OS;
+# using the system package avoids a heavy pip build on the Pi Zero 2W)
+# picamera2>=0.3.0  # install via: sudo apt-get install python3-picamera2
+numpy>=1.20.0
 
-# Optional ML dependencies (for computer vision allergen detection)
-# tensorflow>=2.8.0  # Uncomment for ML-based detection
-# opencv-python>=4.5.0  # Uncomment for OpenCV image processing
+# Vision & OCR pipeline (spec: OpenCV + Tesseract 5.0 LSTM)
+# On Pi Zero 2W use the system package to avoid compiling from source:
+#   sudo apt-get install python3-opencv
+# pip install is kept here for non-Pi development environments
+opencv-python>=4.5.0
+pytesseract>=0.3.10
+
+# tensorflow is omitted – too large for 512 MB RAM on Pi Zero 2W
 
 # Development dependencies
 # pytest>=7.0.0  # For running tests

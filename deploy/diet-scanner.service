@@ -1,14 +1,22 @@
 [Unit]
 Description=HandheldDietScanner Allergen Detection System
-After=graphical.target
+# No graphical session needed; app writes directly to framebuffer via fbcon
+After=multi-user.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/HandheldDietScanner
-Environment="DISPLAY=:0"
+User=sbangapadang
+WorkingDirectory=/home/sbangapadang/HandheldDietScanner
+# Waveshare 3.5" uses the secondary framebuffer (fb1) under the fbtft driver
 Environment="SDL_VIDEODRIVER=fbcon"
-ExecStart=/usr/bin/python3 /home/pi/HandheldDietScanner/main.py
+Environment="SDL_FBDEV=/dev/fb1"
+Environment="SDL_MOUSEDEV=/dev/input/touchscreen"
+Environment="SDL_MOUSEDRV=TSLIB"
+# TSLIB: tell the library where the raw touch device and calibration file are
+Environment="TSLIB_TSDEVICE=/dev/input/touchscreen"
+Environment="TSLIB_FBDEV=/dev/fb1"
+Environment="TSLIB_CALIBFILE=/etc/pointercal"
+ExecStart=/home/sbangapadang/HandheldDietScanner/venv/bin/python /home/sbangapadang/HandheldDietScanner/main.py
 Restart=always
 RestartSec=10
 

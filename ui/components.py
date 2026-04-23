@@ -1,11 +1,40 @@
 """
 Reusable UI components for HandheldDietScanner
 """
+import os
 import pygame
 from config import (
-    COLOR_WHITE, PROFILE_IMAGE_SIZE, ICON_SIZE, 
-    BUTTON_BORDER_RADIUS, CHECKBOX_SIZE
+    COLOR_WHITE, COLOR_BLACK, COLOR_GRAY, PROFILE_IMAGE_SIZE, ICON_SIZE,
+    BUTTON_BORDER_RADIUS, CHECKBOX_SIZE,
+    FONT_BODY_SIZE, OPEN_SANS_REGULAR
 )
+
+
+def load_font(size: int) -> pygame.font.Font:
+    """Return Open Sans at *size* pixels; falls back to pygame default font."""
+    if os.path.exists(OPEN_SANS_REGULAR):
+        return pygame.font.Font(OPEN_SANS_REGULAR, size)
+    return pygame.font.SysFont(None, size)
+
+
+def _load_image_surface(path: str, size: tuple) -> pygame.Surface:
+    """Load and scale an image; return a grey placeholder if file is missing."""
+    if os.path.exists(path):
+        base = pygame.image.load(path).convert()
+    else:
+        base = pygame.Surface(size)
+        base.fill(COLOR_GRAY)
+    return pygame.transform.scale(base, size)
+
+
+def _load_icon_surface(path: str, size: tuple) -> pygame.Surface:
+    """Load an RGBA icon; return a grey placeholder if file is missing."""
+    if os.path.exists(path):
+        base = pygame.image.load(path).convert_alpha()
+    else:
+        base = pygame.Surface(size, pygame.SRCALPHA)
+        base.fill(COLOR_GRAY)
+    return pygame.transform.scale(base, size)
 
 
 class UserProfile:
@@ -13,15 +42,13 @@ class UserProfile:
     __slots__ = ['image', 'name', 'allergies', 'imageRect', 'nameTag', 'textRect']
     
     def __init__(self, xPos, yPos, profileName, profileImage):
-        baseImage = pygame.image.load(profileImage).convert()
-        self.image = pygame.transform.scale(baseImage, PROFILE_IMAGE_SIZE)
+        self.image = _load_image_surface(profileImage, PROFILE_IMAGE_SIZE)
         self.name = profileName
         self.allergies = []
         self.imageRect = self.image.get_rect(topleft=(xPos, yPos))
         
-        # Make nametag for image
-        font = pygame.font.SysFont(None, 40)
-        textSurface = font.render(self.name, True, COLOR_WHITE)
+        font = load_font(FONT_BODY_SIZE)
+        textSurface = font.render(self.name, True, COLOR_BLACK)
         self.nameTag = textSurface.convert_alpha()
         self.textRect = self.nameTag.get_rect(midtop=(self.imageRect.centerx, self.imageRect.bottom + 10))
 
@@ -43,7 +70,7 @@ class Button:
         self.scanRect = pygame.Rect(xPos, yPos, width, height)
         self.text = buttonTitle
         self.color = color
-        self.font = pygame.font.SysFont(None, 40)
+        self.font = load_font(FONT_BODY_SIZE)
         self.textSurface = self.font.render(self.text, True, COLOR_WHITE)
         self.textInButton = self.textSurface.get_rect(center=self.scanRect.center)
      
@@ -62,8 +89,7 @@ class HomeButton:
     __slots__ = ['homeIcon', 'homeRect']
     
     def __init__(self, xPos, yPos, homeImage):
-        baseImage = pygame.image.load(homeImage).convert_alpha()
-        self.homeIcon = pygame.transform.scale(baseImage, ICON_SIZE)
+        self.homeIcon = _load_icon_surface(homeImage, ICON_SIZE)
         self.homeRect = self.homeIcon.get_rect(topleft=(xPos, yPos))
      
     def drawHomeIcon(self, screen):
@@ -80,8 +106,7 @@ class SettingsButton:
     __slots__ = ['settingsIcon', 'settingsRect']
     
     def __init__(self, xPos, yPos, settingsImage):
-        baseImage = pygame.image.load(settingsImage).convert_alpha()
-        self.settingsIcon = pygame.transform.scale(baseImage, ICON_SIZE)
+        self.settingsIcon = _load_icon_surface(settingsImage, ICON_SIZE)
         self.settingsRect = self.settingsIcon.get_rect(topleft=(xPos, yPos))
      
     def drawSettingsIcon(self, screen):

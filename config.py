@@ -18,6 +18,11 @@ COLOR_LIGHT_GREEN = (0, 200, 0)
 COLOR_YELLOW = (255, 255, 0)
 COLOR_RED = (180, 0, 0)
 COLOR_GRAY_BUTTON = (100, 100, 100)
+# Spec: high-contrast light yellow background
+COLOR_LIGHT_YELLOW = (255, 255, 180)
+# Spec: high-visibility Red/Green border colors
+COLOR_BORDER_WARN = (220, 0, 0)
+COLOR_BORDER_OK = (0, 180, 0)
 
 # File Paths
 ASSETS_DIR = "ui/assets"
@@ -77,3 +82,11 @@ GPIO_PINS = {
 # Logging
 LOG_FILE = "diet_scanner.log"
 LOG_LEVEL = "INFO"
+
+# Typography (spec: Open Sans, body min 18pt, warnings/allergens min 24pt)
+# At ~160 DPI for the 3.5" display: 18pt ≈ 40px, 24pt ≈ 54px
+FONT_BODY_SIZE = 40
+FONT_WARN_SIZE = 54
+# System path installed by: apt-get install fonts-open-sans
+OPEN_SANS_REGULAR = "/usr/share/fonts/truetype/open-sans/OpenSans-Regular.ttf"
+OPEN_SANS_BOLD = "/usr/share/fonts/truetype/open-sans/OpenSans-Bold.ttf"
