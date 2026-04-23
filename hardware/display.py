@@ -31,6 +31,7 @@ class DisplayController:
         self.clock = None
         self._initialized = False
         self._fb = None  # open file handle when in direct-fb mode
+        self._fb_surface = None  # 16-bit conversion surface for direct-fb mode
         self._fb_path = os.environ.get('SDL_FBDEV', '/dev/fb0')
 
     # ------------------------------------------------------------------
@@ -70,11 +71,12 @@ class DisplayController:
         if not self.screen:
             return
         if self._fb:
-            # Offscreen mode: blit the 16-bit surface straight to /dev/fb0.
-            # pygame RGB565 matches the fbtft RGB565 layout on little-endian ARM,
-            # so no pixel conversion is needed.
+            # The offscreen SDL driver creates a 32-bit surface, but the fbtft
+            # framebuffer is 16-bit RGB565 (480×320×2 = 307,200 bytes).
+            # Blit onto a 16-bit conversion surface so the byte sizes match.
+            self._fb_surface.blit(self.screen, (0, 0))
             self._fb.seek(0)
-            self._fb.write(self.screen.get_buffer().raw)
+            self._fb.write(self._fb_surface.get_buffer().raw)
             self._fb.flush()
         else:
             pygame.display.flip()
@@ -130,6 +132,11 @@ class DisplayController:
             self.clock = pygame.time.Clock()
             if direct_fb:
                 self._fb = open(self._fb_path, 'wb')
+                # 16-bit RGB565 surface matching the fbtft framebuffer format.
+                # The offscreen driver gives us 32-bit; this is the conversion target.
+                self._fb_surface = pygame.Surface(
+                    (self.width, self.height), depth=16
+                )
             pygame.display.set_caption("Handheld Diet Scanner")
             self._initialized = True
             print(f"Display initialised via '{driver}'"
