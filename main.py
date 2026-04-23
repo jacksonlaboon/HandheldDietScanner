@@ -3,6 +3,7 @@ HandheldDietScanner - Main Application Entry Point
 A modular allergen detection system for Raspberry Pi Zero 2W
 """
 
+import os
 import pygame
 import sys
 
@@ -23,6 +24,7 @@ from hardware.camera import MockCamera, PiCameraInterface
 from hardware.sensor import MockSensor
 from utils.logger import setup_logger, get_logger
 from utils.power_manager import PowerManager
+from utils.touch_input import TouchInputThread
 
 
 class HandheldDietScanner:
@@ -51,6 +53,14 @@ class HandheldDietScanner:
         self.power_manager = PowerManager()
         self.power_manager.set_wake_callback(self._on_wake)
         self.power_manager.set_sleep_callback(self._on_sleep)
+
+        # Touch input thread (SDL offscreen mode does not read TSLIB events)
+        touch_dev = os.environ.get('SDL_MOUSEDEV', '/dev/input/touchscreen')
+        self.touch_thread = TouchInputThread(
+            device_path=touch_dev,
+            screen_w=SCREEN_WIDTH,
+            screen_h=SCREEN_HEIGHT
+        )
         
         # Application state
         self.current_screen = None
@@ -237,7 +247,10 @@ class HandheldDietScanner:
         
         # Initialize screens after display is ready
         self._init_screens()
-        
+
+        # Start touch input thread now that pygame's event queue is live
+        self.touch_thread.start()
+
         self.logger.info("Starting main loop")
         
         while self.run:
@@ -252,6 +265,7 @@ class HandheldDietScanner:
     def shutdown(self):
         """Clean shutdown"""
         self.logger.info("Shutting down HandheldDietScanner")
+        self.touch_thread.stop()
         self.display.shutdown()
         pygame.quit()
         self.logger.info("Shutdown complete")
