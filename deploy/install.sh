@@ -102,6 +102,11 @@ fi
 sudo apt-get install -y python3-picamera2 || \
     echo "python3-picamera2 not found — install manually if camera capture is needed"
 
+# libcamera userspace tools: provides libcamera-hello for CSI camera verification.
+# Pre-installed on most Pi OS images; listed explicitly for reproducibility.
+sudo apt-get install -y libcamera-apps 2>/dev/null || \
+    echo "libcamera-apps not found in apt — libcamera-hello may not be available"
+
 # ---------------------------------------------------------------------------
 # Udev rule: create a stable /dev/input/touchscreen symlink for the
 # Waveshare resistive panel.  The SDL service unit references this path via
@@ -112,12 +117,19 @@ echo "Installing udev rule for /dev/input/touchscreen..."
 UDEV_RULE=/etc/udev/rules.d/95-waveshare-touch.rules
 sudo tee "$UDEV_RULE" > /dev/null <<'UDEV_EOF'
 # Waveshare 3.5" resistive touchscreen (ADS7846 / SPI)
-# Match on the SPI bus path so the rule fires even if the name attribute
-# is not visible from the event node's parent chain.
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{phys}=="spi0.1/input0", SYMLINK+="input/touchscreen", MODE="0660", GROUP="input"
+#
+# Rule 1: match on driver name — works across kernel versions and does not rely
+# on ATTRS{phys} visibility (which fails on Pi OS Bullseye due to the attribute
+# not being visible from the event node's parent chain in the sysfs tree).
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="ADS7846 Touchscreen", SYMLINK+="input/touchscreen", MODE="0660", GROUP="input"
+#
+# Rule 2: fallback by fixed kernel name — only reliable on a stable single-hardware
+# setup where the ADS7846 is always assigned event2 (e.g. this unit, csm-2026).
+# Comment out if deploying to a different Pi where the event number may differ.
+SUBSYSTEM=="input", KERNEL=="event2", SYMLINK+="input/touchscreen", MODE="0660", GROUP="input"
 UDEV_EOF
 sudo udevadm control --reload-rules
-sudo udevadm trigger /sys/class/input/event2 2>/dev/null || sudo udevadm trigger
+sudo udevadm trigger 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # TSLIB configuration
@@ -224,6 +236,17 @@ echo "Installing project Python dependencies..."
 # package (already accessible via --system-site-packages) so skip it here.
 pip install -r requirements.txt --ignore-installed opencv-python 2>/dev/null || \
     pip install -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# numpy source-directory conflict fix.
+# On Pi OS Bullseye the system numpy and a venv-installed numpy can collide,
+# causing "import numpy" to raise a "source directory" ImportError (confirmed
+# on this unit in stage-1 testing).  Force a clean reinstall inside the venv.
+# ---------------------------------------------------------------------------
+echo "Reinstalling numpy to clear any source-directory conflict..."
+pip uninstall numpy -y 2>/dev/null || true
+pip install --no-cache-dir "$(grep -i '^numpy' requirements.txt | head -1)" 2>/dev/null || \
+    pip install --no-cache-dir numpy
 
 echo "Installing HandheldDietScanner package..."
 pip install -e .

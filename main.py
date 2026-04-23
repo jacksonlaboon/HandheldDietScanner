@@ -13,7 +13,8 @@ from config import (
 )
 from ui.screens import (
     HomeScreen, WaitingToScanScreen, SettingsScreen,
-    AllergyProfileScreen, PreparingToScanScreen, ResultsScreen
+    AllergyProfileScreen, PreparingToScanScreen,
+    LiveViewScreen, ProcessingScreen, ResultsScreen,
 )
 from ui.components import UserProfile as UIUserProfile
 from services.profile_manager import ProfileManager, UserProfile as ServiceUserProfile
@@ -94,8 +95,10 @@ class HandheldDietScanner:
                 self.power_manager.record_activity()
             
             # Handle screen-specific events
-            if self.state == "ALLERGY" or self.state == "RESULTS":
+            if self.state == "ALLERGY":
                 new_state = self.current_screen.userAction(event, self.profile_selected)
+            elif self.state == "RESULTS":
+                new_state = self.current_screen.userAction(event)
             else:
                 new_state = self.current_screen.userAction(event)
             
@@ -105,9 +108,12 @@ class HandheldDietScanner:
     def transition_to_state(self, new_state: str, event=None):
         """Transition to a new application state"""
         if new_state == "HOME":
+            # Stop camera if the user backed out of the live viewfinder
+            if self.state == "LIVE":
+                self.scan_processor.camera.stop()
             self.current_screen = self.home_screen
             self.profile_selected = None
-            
+
         elif new_state == "SCAN":
             if self.state == "HOME":
                 # Determine which profile was selected
@@ -116,11 +122,20 @@ class HandheldDietScanner:
                         self.profile_selected = self.home_screen.profileOne
                     elif self.home_screen.profileTwo.isClicked(event.pos):
                         self.profile_selected = self.home_screen.profileTwo
-            
+
             if self.profile_selected:
                 self.scan_screen.getProfile(self.profile_selected.name)
             self.current_screen = self.scan_screen
-            
+
+        elif new_state == "LIVE":
+            self.scan_processor.camera.start()
+            self.current_screen = self.live_screen
+
+        elif new_state == "PROCESSING":
+            self.scan_processor.camera.stop()
+            self.processing_screen.set_frame(self.live_screen.captured_frame)
+            self.current_screen = self.processing_screen
+
         elif new_state == "PREPARE":
             self._last_live_frame = None
             if self.profile_selected:
@@ -136,13 +151,12 @@ class HandheldDietScanner:
                         )
                     )
                     self.preparing_screen.updateImage(preset_image)
-                    self.results_screen.updateImage(preset_image)
                 else:
                     # Real camera: start the stream; frames arrive in update()
                     self.scan_processor.camera.start()
                 self.preparing_screen.resetTimer()
             self.current_screen = self.preparing_screen
-            
+
         elif new_state == "SETTINGS":
             # Persist allergy edits when returning from the allergy editor
             if self.state == "ALLERGY" and self.profile_selected is not None:
@@ -159,7 +173,16 @@ class HandheldDietScanner:
     
     def update(self):
         """Update game logic"""
-        if self.state == "PREPARE":
+        if self.state == "LIVE":
+            frame = self.scan_processor.camera.get_live_frame()
+            self.live_screen.update_frame(frame)
+
+        elif self.state == "PROCESSING":
+            if self.processing_screen.timer >= self.processing_screen.HOLD_FRAMES:
+                self.state = "RESULTS"
+                self.current_screen = self.results_screen
+
+        elif self.state == "PREPARE":
             # Grab a live frame every tick for the Digital Loupe viewfinder
             live_frame = self.scan_processor.camera.get_live_frame()
             if live_frame is not None:
@@ -176,10 +199,8 @@ class HandheldDietScanner:
                         use_camera=False,
                         frame=self._last_live_frame
                     )
-                    self.results_screen.allergens_detected = result.allergens_detected
-                    # Update the results image from the live frame when available
                     if self._last_live_frame is not None:
-                        self.results_screen.updateSurface(self._last_live_frame)
+                        pass  # ResultsScreen no longer uses allergens_detected
                 self.state = "RESULTS"
                 self.current_screen = self.results_screen
 
@@ -192,7 +213,7 @@ class HandheldDietScanner:
         screen = self.display.get_screen()
         screen.fill(COLOR_LIGHT_YELLOW)
         
-        if self.state == "ALLERGY" or self.state == "RESULTS":
+        if self.state == "ALLERGY":
             self.current_screen.drawScreen(screen, self.profile_selected)
         else:
             self.current_screen.drawScreen(screen)
@@ -217,6 +238,8 @@ class HandheldDietScanner:
         self.settings_screen = SettingsScreen()
         self.allergy_screen = AllergyProfileScreen()
         self.preparing_screen = PreparingToScanScreen()
+        self.live_screen = LiveViewScreen()
+        self.processing_screen = ProcessingScreen()
         self.results_screen = ResultsScreen()
         
         # Set initial screen

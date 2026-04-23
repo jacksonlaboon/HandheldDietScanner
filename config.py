@@ -39,6 +39,7 @@ SETTINGS_ICON = "ui/assets/settingsIcon.png"
 # Demo Scan Images
 DEMO_IMAGE_1 = "ui/assets/reesesImage.jpg"  # For Bruce (allergen detected)
 DEMO_IMAGE_2 = "ui/assets/hershey.jpg"      # For Ramona (no allergens)
+DEMO_PROCESSED_LABEL = "images/processed_label.jpg"
 
 # UI Dimensions
 PROFILE_IMAGE_SIZE = (200, 200)

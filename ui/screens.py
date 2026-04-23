@@ -1,14 +1,16 @@
 """
 Screen classes for HandheldDietScanner
 """
+import os
 import pygame
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, COLOR_WHITE,
     COLOR_GREEN, COLOR_DARK_GREEN, COLOR_GRAY_BUTTON,
-    COLOR_YELLOW, COLOR_RED, COLOR_LIGHT_GREEN,
+    COLOR_YELLOW, COLOR_RED, COLOR_LIGHT_GREEN, COLOR_GRAY,
     COLOR_BORDER_WARN, COLOR_BORDER_OK,
     FONT_BODY_SIZE, FONT_WARN_SIZE,
-    PREPARE_SCAN_DURATION, COLOR_LIGHT_YELLOW
+    PREPARE_SCAN_DURATION, COLOR_LIGHT_YELLOW,
+    DEMO_PROCESSED_LABEL,
 )
 from ui.components import UserProfile, Button, HomeButton, SettingsButton, load_font
 
@@ -69,7 +71,7 @@ class WaitingToScanScreen:
             if self.homeIcon.isClicked(event.pos):
                 return "HOME"
             if self.scanIcon.isClicked(event.pos):
-                return "PREPARE"
+                return "LIVE"
         return "SCAN"
 
 
@@ -198,129 +200,149 @@ class PreparingToScanScreen:
         self.timer = 0
 
 
-class ResultsScreen:
-    """Screen displaying scan results"""
-    __slots__ = [
-        'bigFont', 'homeIcon', 'zoomLevel',
-        'baseImage', 'displayImage', 'fullImage', 'magImage',
-        'magRect', 'imgRect', 'fullRect',
-        'allergens_detected',
-    ]
-    
+class LiveViewScreen:
+    """Live camera viewfinder with a CAPTURE button for the POC demo."""
+    __slots__ = ['capture_btn', 'home_icon', 'live_surface', 'live_rect', 'captured_frame']
+
     def __init__(self):
-        self.bigFont = load_font(FONT_WARN_SIZE)
-        self.homeIcon = HomeButton(0, 0, "ui/assets/homeIcon.png")
-        
-        # State: 0 = Normal, 1 = Fullscreen, 2 = Magnified
-        self.zoomLevel = 0
-        self.baseImage = None
-        self.displayImage = None
-        self.fullImage = None
-        self.magImage = None
-        self.magRect = None
-        self.imgRect = None
-        self.fullRect = None
-        # Populated by main before transitioning to this screen
-        self.allergens_detected: dict = {}
+        btn_w, btn_h = 200, 52
+        self.capture_btn = Button(
+            (SCREEN_WIDTH - btn_w) // 2, SCREEN_HEIGHT - btn_h - 10,
+            btn_w, btn_h, "CAPTURE", COLOR_RED,
+        )
+        self.home_icon = HomeButton(0, 0, "ui/assets/homeIcon.png")
+        self.live_surface = None
+        self.live_rect = None
+        self.captured_frame = None
 
-    def updateSurface(self, surface: pygame.Surface):
-        """Populate zoom levels from a live-captured pygame Surface."""
-        self.baseImage = surface.copy()
-        self._build_zoom_images()
+    def update_frame(self, surface: pygame.Surface):
+        """Receive the latest camera frame and scale it to fill the screen."""
+        if surface is not None:
+            self.live_surface = pygame.transform.scale(surface, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.live_rect = self.live_surface.get_rect(topleft=(0, 0))
 
-    def updateImage(self, imgPath):
-        """Populate zoom levels from a file path (demo / mock mode)."""
-        self.baseImage = pygame.image.load(imgPath).convert()
-        self._build_zoom_images()
+    def drawScreen(self, screen):
+        if self.live_surface:
+            screen.blit(self.live_surface, self.live_rect)
+        else:
+            screen.fill((40, 40, 40))
+        self.capture_btn.draw(screen)
+        self.home_icon.drawHomeIcon(screen)
 
-    def _build_zoom_images(self):
-        """Pre-scale the base image for the three zoom levels."""
-        
-        # Standard view with text at top
-        self.displayImage = pygame.transform.scale(self.baseImage, (SCREEN_WIDTH, SCREEN_HEIGHT - 60))
-        self.imgRect = self.displayImage.get_rect(midbottom=(SCREEN_WIDTH // 2, SCREEN_HEIGHT))
-        
-        # Fullscreen view
-        self.fullImage = pygame.transform.scale(self.baseImage, (SCREEN_WIDTH, SCREEN_HEIGHT))
-        self.fullRect = self.fullImage.get_rect(topleft=(0, 0))
-        
-        # Magnified view (2x scale)
-        self.magImage = pygame.transform.scale(self.baseImage, (SCREEN_WIDTH * 2, SCREEN_HEIGHT * 2))
-
-    def drawScreen(self, screen, profileSelected):
-        """Draw results screen with appropriate zoom level"""
-        if self.zoomLevel == 0:
-            # Determine if any of the profile's allergens were actually detected
-            profile_allergens = set(a.lower() for a in profileSelected.allergies)
-            detected_allergens = {
-                k for k, v in self.allergens_detected.items() if v
-            }
-            allergen_hit = bool(
-                profile_allergens & {a.lower() for a in detected_allergens}
-            ) if profile_allergens else bool(detected_allergens)
-
-            # Spec: high-visibility Red/Green *border* indicators (not full-screen fill)
-            border_color = COLOR_BORDER_WARN if allergen_hit else COLOR_BORDER_OK
-            pygame.draw.rect(screen, border_color, screen.get_rect(), 8)
-
-            self.homeIcon.drawHomeIcon(screen)
-            if self.displayImage:
-                screen.blit(self.displayImage, self.imgRect)
-
-            msg_text = "ALLERGEN DETECTED!" if allergen_hit else "NO ALLERGENS"
-            msg_color = COLOR_YELLOW if allergen_hit else COLOR_LIGHT_GREEN
-            msg = self.bigFont.render(msg_text, True, msg_color)
-            msg_x = SCREEN_WIDTH // 2 - msg.get_width() // 2
-            msg_y = 15
-            # Dark backing strip so the high-visibility colours stay readable on
-            # the light yellow background (spec: min 7:1 contrast for all text).
-            backing = pygame.Surface((msg.get_width() + 16, msg.get_height() + 8))
-            backing.fill(COLOR_BLACK)
-            screen.blit(backing, (msg_x - 8, msg_y - 4))
-            screen.blit(msg, (msg_x, msg_y))
-
-        elif self.zoomLevel == 1:
-            # FULLSCREEN
-            screen.blit(self.fullImage, self.fullRect)
-
-        elif self.zoomLevel == 2:
-            # MAGNIFIED at specific tap location
-            screen.blit(self.magImage, self.magRect)
-
-    def userAction(self, event, profileSelected):
-        """Handle user interactions and zoom level changes"""
+    def userAction(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.zoomLevel == 0:
-                if self.imgRect.collidepoint(event.pos):
-                    self.zoomLevel = 1
-                    return "RESULTS"
-                elif self.homeIcon.isClicked(event.pos):
-                    return "HOME"
-            
-            elif self.zoomLevel == 1:
-                # Get tap position to calculate magnification center
-                tapX, tapY = event.pos
-           
-                self.magRect = self.magImage.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))
-                # Calculate offset from center
-                offsetX = (SCREEN_WIDTH // 2) - tapX
-                offsetY = (SCREEN_HEIGHT // 2) - tapY
-                
-                self.magRect.centerx += offsetX * 2
-                self.magRect.centery += offsetY * 2
-                
-                # Ensure image stays on screen
-                if self.magRect.left > 0: self.magRect.left = 0
-                if self.magRect.right < SCREEN_WIDTH: self.magRect.right = SCREEN_WIDTH
-                if self.magRect.top > 0: self.magRect.top = 0
-                if self.magRect.bottom < SCREEN_HEIGHT: self.magRect.bottom = SCREEN_HEIGHT
-                
-                self.zoomLevel = 2
-                return "RESULTS"
-            
-            elif self.zoomLevel == 2:
-                # Tap again to go back to normal
-                self.zoomLevel = 0
-                return "RESULTS"
-                
+            if self.home_icon.isClicked(event.pos):
+                self.captured_frame = None
+                return "HOME"
+            if self.capture_btn.isClicked(event.pos):
+                self.captured_frame = (
+                    self.live_surface.copy() if self.live_surface is not None else None
+                )
+                return "PROCESSING"
+        return "LIVE"
+
+
+class ProcessingScreen:
+    """Frozen snapshot with a 'Processing...' banner; auto-advances via main update loop."""
+    __slots__ = ['font', 'label', 'label_rect', 'snapshot', 'snap_rect', 'timer']
+
+    HOLD_FRAMES = 75  # ~2.5 s at 30 fps
+
+    def __init__(self):
+        self.font = load_font(FONT_WARN_SIZE)
+        self.label = self.font.render("Processing...", True, COLOR_WHITE)
+        self.label_rect = self.label.get_rect(center=(SCREEN_WIDTH // 2, 34))
+        self.snapshot = None
+        self.snap_rect = None
+        self.timer = 0
+
+    def set_frame(self, surface: pygame.Surface):
+        """Store the captured frame and reset the hold timer."""
+        if surface is not None:
+            self.snapshot = pygame.transform.scale(surface, (SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.snap_rect = self.snapshot.get_rect(topleft=(0, 0))
+        else:
+            self.snapshot = None
+        self.timer = 0
+
+    def drawScreen(self, screen):
+        if self.snapshot:
+            screen.blit(self.snapshot, self.snap_rect)
+        backing_w = self.label.get_width() + 20
+        backing_h = self.label.get_height() + 10
+        backing = pygame.Surface((backing_w, backing_h))
+        backing.fill(COLOR_BLACK)
+        screen.blit(backing, (self.label_rect.x - 10, self.label_rect.y - 5))
+        screen.blit(self.label, self.label_rect)
+        self.timer += 1
+
+    def userAction(self, event):
+        return "PROCESSING"
+
+
+class ResultsScreen:
+    """POC demo results: processed label image left, hardcoded 'Soy detected' panel right."""
+
+    # Left column width; right panel takes the remainder
+    _IMG_W = 290
+    _PANEL_X = 290
+    _PANEL_W = SCREEN_WIDTH - 290   # 190 px
+
+    __slots__ = [
+        'label_img', 'label_rect',
+        'soy_surf', 'soy_rect',
+        'detected_surf', 'detected_rect',
+        'back_btn',
+        'allergen_font', 'detected_font',
+    ]
+
+    def __init__(self):
+        self.allergen_font = load_font(FONT_WARN_SIZE)   # 54 px — meets ≥24 pt spec
+        self.detected_font = load_font(32)
+
+        cx = self._PANEL_X + self._PANEL_W // 2
+
+        self.soy_surf = self.allergen_font.render("SOY", True, COLOR_RED)
+        self.soy_rect = self.soy_surf.get_rect(center=(cx, 115))
+
+        self.detected_surf = self.detected_font.render("detected", True, COLOR_BLACK)
+        self.detected_rect = self.detected_surf.get_rect(center=(cx, 180))
+
+        self.back_btn = Button(
+            self._PANEL_X + 15, SCREEN_HEIGHT - 68,
+            self._PANEL_W - 30, 52,
+            "BACK", COLOR_GRAY_BUTTON,
+        )
+
+        self.label_img = None
+        self.label_rect = None
+        self._load_label()
+
+    def _load_label(self):
+        if os.path.exists(DEMO_PROCESSED_LABEL):
+            base = pygame.image.load(DEMO_PROCESSED_LABEL).convert()
+            self.label_img = pygame.transform.scale(base, (self._IMG_W, SCREEN_HEIGHT))
+        else:
+            placeholder = pygame.Surface((self._IMG_W, SCREEN_HEIGHT))
+            placeholder.fill(COLOR_GRAY)
+            self.label_img = placeholder
+        self.label_rect = pygame.Rect(0, 0, self._IMG_W, SCREEN_HEIGHT)
+
+    def drawScreen(self, screen, *_args):
+        # Left: food label image
+        screen.blit(self.label_img, self.label_rect)
+
+        # Right: allergen panel
+        panel_rect = pygame.Rect(self._PANEL_X, 0, self._PANEL_W, SCREEN_HEIGHT)
+        pygame.draw.rect(screen, COLOR_LIGHT_YELLOW, panel_rect)
+        pygame.draw.rect(screen, COLOR_BORDER_WARN, panel_rect, 4)
+
+        screen.blit(self.soy_surf, self.soy_rect)
+        screen.blit(self.detected_surf, self.detected_rect)
+        self.back_btn.draw(screen)
+
+    def userAction(self, event, profileSelected=None):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if self.back_btn.isClicked(event.pos):
+                return "HOME"
         return "RESULTS"
