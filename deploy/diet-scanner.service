@@ -9,6 +9,11 @@ User=sbangapadang
 # video: access /dev/fb0   render: GPU/DRM access   input: /dev/input/event*
 SupplementaryGroups=video render input
 WorkingDirectory=/home/sbangapadang/HandheldDietScanner
+# SDL2 fbcon driver requires a real TTY — allocate tty1 so it can do VT management
+StandardInput=tty
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
 # Waveshare 3.5" uses the secondary framebuffer (fb1) under the fbtft driver
 Environment="SDL_VIDEODRIVER=fbcon"
 Environment="SDL_FBDEV=/dev/fb0"
