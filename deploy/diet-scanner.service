@@ -6,6 +6,8 @@ After=multi-user.target
 [Service]
 Type=simple
 User=sbangapadang
+# video: access /dev/fb0   render: GPU/DRM access   input: /dev/input/event*
+SupplementaryGroups=video render input
 WorkingDirectory=/home/sbangapadang/HandheldDietScanner
 # Waveshare 3.5" uses the secondary framebuffer (fb1) under the fbtft driver
 Environment="SDL_VIDEODRIVER=fbcon"
