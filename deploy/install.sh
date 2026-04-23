@@ -136,9 +136,9 @@ TSCONF_EOF
 # These are written to /etc/environment so they are available system-wide
 # (the service unit also sets them explicitly for safety).
 if ! grep -q "TSLIB_TSDEVICE" /etc/environment 2>/dev/null; then
-    echo 'TSLIB_TSDEVICE=/dev/input/event2'  | sudo tee -a /etc/environment
-    echo 'TSLIB_FBDEV=/dev/fb0'              | sudo tee -a /etc/environment
-    echo 'TSLIB_CALIBFILE=/etc/pointercal'   | sudo tee -a /etc/environment
+    echo 'TSLIB_TSDEVICE=/dev/input/touchscreen' | sudo tee -a /etc/environment
+    echo 'TSLIB_FBDEV=/dev/fb1'                  | sudo tee -a /etc/environment
+    echo 'TSLIB_CALIBFILE=/etc/pointercal'        | sudo tee -a /etc/environment
 fi
 
 # ---------------------------------------------------------------------------
