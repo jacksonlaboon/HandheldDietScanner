@@ -132,8 +132,7 @@ class HandheldDietScanner:
             self.current_screen = self.live_screen
 
         elif new_state == "PROCESSING":
-            self.scan_processor.camera.stop()
-            self.processing_screen.set_frame(self.live_screen.captured_frame)
+            self.processing_screen.set_frame(None)
             self.current_screen = self.processing_screen
 
         elif new_state == "PREPARE":

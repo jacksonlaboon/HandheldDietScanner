@@ -71,7 +71,7 @@ class WaitingToScanScreen:
             if self.homeIcon.isClicked(event.pos):
                 return "HOME"
             if self.scanIcon.isClicked(event.pos):
-                return "LIVE"
+                return "PROCESSING"
         return "SCAN"
 
 
