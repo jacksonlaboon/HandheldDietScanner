@@ -29,13 +29,54 @@ _EVT_FMT  = f'{_LONG}{_LONG}HHi'
 _EVT_SIZE = struct.calcsize(_EVT_FMT)
 
 
+def _find_touch_device(preferred: str) -> str:
+    """Return a usable touch device path.
+
+    Tries *preferred* first, then scans /proc/bus/input/devices for the
+    ADS7846 handler, then falls back to /dev/input/event0..event9.
+    """
+    if os.path.exists(preferred):
+        return preferred
+
+    # Parse /proc/bus/input/devices for the ADS7846 touch controller
+    try:
+        with open('/proc/bus/input/devices') as fh:
+            block, name = [], ''
+            for line in fh:
+                line = line.strip()
+                if line.startswith('N:'):
+                    name = line
+                elif line.startswith('H:') and 'ADS7846' in name:
+                    # Handlers line e.g. "H: Handlers=mouse0 event2"
+                    for token in line.split():
+                        if token.startswith('event'):
+                            path = f'/dev/input/{token}'
+                            if os.path.exists(path):
+                                print(f"Touch: found ADS7846 at {path} "
+                                      f"(symlink {preferred} missing)")
+                                return path
+                elif line == '':
+                    name = ''
+    except Exception:
+        pass
+
+    # Last-resort: try event0..event9 in order
+    for n in range(10):
+        path = f'/dev/input/event{n}'
+        if os.path.exists(path):
+            print(f"Touch: falling back to {path}")
+            return path
+
+    return preferred  # will fail in run() with a clear error
+
+
 class TouchInputThread(threading.Thread):
     """Reads ADS7846 evdev events and injects them into pygame's event queue."""
 
     def __init__(self, device_path: str, screen_w: int, screen_h: int,
                  pointercal: str = '/etc/pointercal'):
         super().__init__(daemon=True, name='touch-input')
-        self.device_path = device_path
+        self.device_path = _find_touch_device(device_path)
         self.screen_w    = screen_w
         self.screen_h    = screen_h
         self._raw_x      = 0
