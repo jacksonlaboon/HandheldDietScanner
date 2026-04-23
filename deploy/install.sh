@@ -169,6 +169,31 @@ else
     echo "zswap parameters already present in $BOOT_CMDLINE (or file not found)"
 fi
 
+# ---------------------------------------------------------------------------
+# Suppress boot text and console login prompt on the framebuffer display.
+# Without this the kernel boot log and "csm-2026: login:" appear on /dev/fb0
+# (the same framebuffer pygame renders to), giving a messy boot experience.
+#
+# quiet loglevel=3       — suppress kernel boot messages
+# vt.global_cursor_default=0 — hide the blinking text cursor on the display
+# logo.nologo            — skip the Raspberry Pi rainbow splash
+# ---------------------------------------------------------------------------
+echo "Suppressing boot console output on framebuffer..."
+QUIET_PARAMS="quiet loglevel=3 vt.global_cursor_default=0 logo.nologo"
+if [ -f "$BOOT_CMDLINE" ] && ! grep -q "vt.global_cursor_default" "$BOOT_CMDLINE"; then
+    sudo sed -i "s/$/ $QUIET_PARAMS/" "$BOOT_CMDLINE"
+    echo "  Added: $QUIET_PARAMS"
+else
+    echo "  Console suppression already present in $BOOT_CMDLINE (or file not found)"
+fi
+
+# Disable the getty login prompt on tty1 (the framebuffer console).
+# The diet-scanner service runs as a systemd unit and does not need a logged-in
+# shell session, so the login prompt serves no purpose and would flash on-screen.
+echo "Disabling tty1 login prompt..."
+sudo systemctl disable getty@tty1.service 2>/dev/null || true
+sudo systemctl mask    getty@tty1.service 2>/dev/null || true
+
 # Apply immediately for the current boot session (best-effort)
 echo 1 | sudo tee /sys/module/zswap/parameters/enabled      > /dev/null 2>&1 || true
 echo lz4 | sudo tee /sys/module/zswap/parameters/compressor > /dev/null 2>&1 || true
@@ -226,20 +251,24 @@ echo ""
 echo "┌─────────────────────────────────────────────────────────────────┐"
 echo "│  REQUIRED STEPS BEFORE FIRST USE                               │"
 echo "│                                                                 │"
-echo "│  1. REBOOT — activates the display driver, camera, and zSwap:  │"
+echo "│  1. REBOOT — activates display driver, camera, zSwap, and      │"
+echo "│     the auto-start service (no login prompt after this):       │"
 echo "│       sudo reboot                                               │"
 echo "│                                                                 │"
 echo "│  2. CALIBRATE TOUCH (once, after reboot) — resistive screens   │"
-echo "│     must be calibrated or tap coordinates will be wrong:       │"
+echo "│     must be calibrated or tap coordinates will be wrong.       │"
+echo "│     Stop the service first so it is not rendering to fb0:      │"
+echo "│       sudo systemctl stop diet-scanner.service                 │"
 echo "│       TSLIB_TSDEVICE=/dev/input/touchscreen \                  │"
 echo "│       TSLIB_FBDEV=/dev/fb0 \                                   │"
 echo "│       TSLIB_CALIBFILE=/etc/pointercal \                        │"
 echo "│       sudo -E ts_calibrate                                     │"
 echo "│     Follow the on-screen prompts (tap each crosshair).         │"
 echo "│     This writes /etc/pointercal which the service reads.       │"
-echo "│                                                                 │"
-echo "│  3. START the service:                                         │"
 echo "│       sudo systemctl start diet-scanner.service                │"
+echo "│                                                                 │"
+echo "│  After the first reboot the scanner starts automatically —     │"
+echo "│  no login required, no login prompt on screen.                 │"
 echo "└─────────────────────────────────────────────────────────────────┘"
 echo ""
 echo "Other useful commands:"

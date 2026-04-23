@@ -9,9 +9,9 @@ SupplementaryGroups=video render input
 WorkingDirectory=/home/sbangapadang/HandheldDietScanner
 # Display: offscreen SDL → direct framebuffer write to /dev/fb0
 Environment="SDL_FBDEV=/dev/fb0"
-Environment="SDL_MOUSEDEV=/dev/input/event2"
+Environment="SDL_MOUSEDEV=/dev/input/touchscreen"
 Environment="SDL_MOUSEDRV=TSLIB"
-Environment="TSLIB_TSDEVICE=/dev/input/event2"
+Environment="TSLIB_TSDEVICE=/dev/input/touchscreen"
 Environment="TSLIB_FBDEV=/dev/fb0"
 Environment="TSLIB_CALIBFILE=/etc/pointercal"
 ExecStart=/home/sbangapadang/HandheldDietScanner/venv/bin/python /home/sbangapadang/HandheldDietScanner/main.py
