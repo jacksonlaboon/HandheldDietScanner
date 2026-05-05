@@ -48,7 +48,7 @@ class UserProfile:
         self.imageRect = self.image.get_rect(topleft=(xPos, yPos))
         
         font = load_font(FONT_BODY_SIZE)
-        textSurface = font.render(self.name, True, COLOR_BLACK)
+        textSurface = font.render(self.name, True, COLOR_WHITE)
         self.nameTag = textSurface.convert_alpha()
         self.textRect = self.nameTag.get_rect(midtop=(self.imageRect.centerx, self.imageRect.bottom + 10))
 

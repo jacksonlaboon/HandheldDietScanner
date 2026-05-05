@@ -1,0 +1,16 @@
+[
+  {
+    "name": "Bruce",
+    "image_path": "ui/assets/mcqueen.jpeg",
+    "allergies": [
+      "Soy"
+    ],
+    "demo_scan_image": "ui/assets/reesesImage.jpg"
+  },
+  {
+    "name": "Ramona",
+    "image_path": "ui/assets/minniemouse.jpg",
+    "allergies": [],
+    "demo_scan_image": "ui/assets/hershey.jpg"
+  }
+]

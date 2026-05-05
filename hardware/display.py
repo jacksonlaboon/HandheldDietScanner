@@ -22,11 +22,12 @@ class DisplayController:
     """
 
     def __init__(self, width=SCREEN_WIDTH, height=SCREEN_HEIGHT,
-                 color_depth=COLOR_DEPTH, fps=FPS):
+                 color_depth=COLOR_DEPTH, fps=FPS, local=False):
         self.width = width
         self.height = height
         self.color_depth = color_depth
         self.fps = fps
+        self.local = local
         self.screen = None
         self.clock = None
         self._initialized = False
@@ -39,7 +40,17 @@ class DisplayController:
     # ------------------------------------------------------------------
 
     def init_display(self) -> bool:
-        """Initialise pygame display with automatic driver fallback."""
+        """Initialise pygame display with automatic driver fallback.
+
+        In local mode the Pi-specific fbcon/offscreen path is skipped entirely;
+        SDL picks whatever native windowed driver is available on the host OS
+        (x11, wayland, windows, …).
+        """
+        if self.local:
+            # Remove any Pi-specific driver override so SDL auto-detects.
+            os.environ.pop('SDL_VIDEODRIVER', None)
+            return self._try_driver('local (auto)')
+
         preferred = os.environ.get('SDL_VIDEODRIVER', 'fbcon')
 
         if self._try_driver(preferred):
@@ -122,9 +133,14 @@ class DisplayController:
     # ------------------------------------------------------------------
 
     def _try_driver(self, driver: str, direct_fb: bool = False) -> bool:
-        """Attempt to initialise pygame with *driver*. Returns True on success."""
+        """Attempt to initialise pygame with *driver*. Returns True on success.
+
+        When *driver* is ``'local (auto)'`` the SDL_VIDEODRIVER env var is left
+        unset so SDL picks the right native windowed driver automatically.
+        """
         try:
-            os.environ['SDL_VIDEODRIVER'] = driver
+            if driver != 'local (auto)':
+                os.environ['SDL_VIDEODRIVER'] = driver
             pygame.init()
             self.screen = pygame.display.set_mode(
                 (self.width, self.height), 0, self.color_depth

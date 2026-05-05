@@ -6,10 +6,10 @@ import pygame
 from config import (
     SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, COLOR_WHITE,
     COLOR_GREEN, COLOR_DARK_GREEN, COLOR_GRAY_BUTTON,
-    COLOR_YELLOW, COLOR_RED, COLOR_LIGHT_GREEN, COLOR_GRAY,
+    COLOR_YELLOW, COLOR_RED, COLOR_GRAY,
     COLOR_BORDER_WARN, COLOR_BORDER_OK,
     FONT_BODY_SIZE, FONT_WARN_SIZE,
-    PREPARE_SCAN_DURATION, COLOR_LIGHT_YELLOW,
+    PREPARE_SCAN_DURATION,
     DEMO_PROCESSED_LABEL,
 )
 from ui.components import UserProfile, Button, HomeButton, SettingsButton, load_font
@@ -52,7 +52,7 @@ class WaitingToScanScreen:
     def getProfile(self, profileName):
         """Set the profile name to display"""
         self.name = f"User: {profileName}"
-        self.nameSurface = self.font.render(self.name, True, COLOR_BLACK)
+        self.nameSurface = self.font.render(self.name, True, COLOR_WHITE)
         self.nameRect = self.nameSurface.get_rect(center=(SCREEN_WIDTH // 2, 35))
 
     def drawScreen(self, screen):
@@ -81,7 +81,7 @@ class SettingsScreen:
     
     def __init__(self):
         self.font = load_font(FONT_BODY_SIZE)
-        self.settingsTitle = self.font.render("DEVICE SETTINGS", True, COLOR_BLACK)
+        self.settingsTitle = self.font.render("DEVICE SETTINGS", True, COLOR_WHITE)
         self.titleRect = self.settingsTitle.get_rect(center=(SCREEN_WIDTH // 2, 35))
         
         self.backButton = Button(60, 200, 360, 80, "BACK TO SCAN", COLOR_GRAY_BUTTON)
@@ -122,7 +122,7 @@ class AllergyProfileScreen:
    
     def drawScreen(self, screen, profileName):
         """Draw allergy profile screen"""
-        title = self.titleFont.render(f"Editing: {profileName.name}", True, COLOR_BLACK)
+        title = self.titleFont.render(f"Editing: {profileName.name}", True, COLOR_WHITE)
         screen.blit(title, (100, 25))
 
         self.optionsSelectedRect = []
@@ -136,11 +136,11 @@ class AllergyProfileScreen:
             self.optionsSelectedRect.append((checkBoxRect, option))
 
             if option in profileName.allergies:
-                pygame.draw.rect(screen, COLOR_LIGHT_GREEN, checkBoxRect, border_radius=5)
+                pygame.draw.rect(screen, COLOR_RED, checkBoxRect, border_radius=5)
             else:
                 pygame.draw.rect(screen, COLOR_GRAY_BUTTON, checkBoxRect, border_radius=5)
-           
-            allergenText = self.allergyFont.render(option, True, COLOR_BLACK)
+
+            allergenText = self.allergyFont.render(option, True, COLOR_WHITE)
             screen.blit(allergenText, (xPos + 55, yPos + 5))
         self.saveButton.draw(screen)
         self.homeIcon.drawHomeIcon(screen)
@@ -168,7 +168,7 @@ class PreparingToScanScreen:
     
     def __init__(self):
         self.font = load_font(FONT_WARN_SIZE)
-        self.text = self.font.render("PREPARING SCAN...", True, COLOR_BLACK)
+        self.text = self.font.render("PREPARING SCAN...", True, COLOR_WHITE)
         self.timer = 0
         self.image = None
         self.imageRect = None
@@ -305,7 +305,7 @@ class ResultsScreen:
         self.soy_surf = self.allergen_font.render("SOY", True, COLOR_RED)
         self.soy_rect = self.soy_surf.get_rect(center=(cx, 115))
 
-        self.detected_surf = self.detected_font.render("detected", True, COLOR_BLACK)
+        self.detected_surf = self.detected_font.render("detected", True, COLOR_WHITE)
         self.detected_rect = self.detected_surf.get_rect(center=(cx, 180))
 
         self.back_btn = Button(
@@ -334,7 +334,7 @@ class ResultsScreen:
 
         # Right: allergen panel
         panel_rect = pygame.Rect(self._PANEL_X, 0, self._PANEL_W, SCREEN_HEIGHT)
-        pygame.draw.rect(screen, COLOR_LIGHT_YELLOW, panel_rect)
+        pygame.draw.rect(screen, COLOR_BLACK, panel_rect)
         pygame.draw.rect(screen, COLOR_BORDER_WARN, panel_rect, 4)
 
         screen.blit(self.soy_surf, self.soy_rect)

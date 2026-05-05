@@ -3,12 +3,13 @@ HandheldDietScanner - Main Application Entry Point
 A modular allergen detection system for Raspberry Pi Zero 2W
 """
 
+import argparse
 import os
 import pygame
 import sys
 
 from config import (
-    SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, COLOR_LIGHT_YELLOW,
+    SCREEN_WIDTH, SCREEN_HEIGHT, COLOR_BLACK, COLOR_WHITE,
     PREPARE_SCAN_DURATION, DEFAULT_PROFILES
 )
 from ui.screens import (
@@ -21,7 +22,7 @@ from services.profile_manager import ProfileManager, UserProfile as ServiceUserP
 from services.scan_processor import ScanProcessor
 from services.data_storage import DataStorage
 from hardware.display import DisplayController
-from hardware.camera import MockCamera, PiCameraInterface
+from hardware.camera import MockCamera, PiCameraInterface, CameraInterface
 from hardware.sensor import MockSensor
 from utils.logger import setup_logger, get_logger
 from utils.power_manager import PowerManager
@@ -30,38 +31,46 @@ from utils.touch_input import TouchInputThread
 
 class HandheldDietScanner:
     """Main application class for HandheldDietScanner"""
-    
-    def __init__(self):
+
+    def __init__(self, local: bool = False):
+        self.local = local
+
         # Setup logging
         self.logger = setup_logger()
-        self.logger.info("Initializing HandheldDietScanner")
-        
+        self.logger.info("Initializing HandheldDietScanner (local=%s)", local)
+
         # Initialize services
         self.profile_manager = ProfileManager()
         self.data_storage = DataStorage()
-        # Use PiCameraInterface on real hardware; it silently falls back to
-        # MockCamera if picamera2 is not available (e.g. dev workstation).
+
+        # In local mode use MockCamera directly so picamera2 is never imported.
+        camera: CameraInterface = MockCamera() if local else PiCameraInterface()
         self.scan_processor = ScanProcessor(
-            camera=PiCameraInterface(),
+            camera=camera,
             sensor=MockSensor(),
             data_storage=self.data_storage
         )
-        
-        # Initialize hardware
-        self.display = DisplayController(SCREEN_WIDTH, SCREEN_HEIGHT)
-        
+
+        # Initialize hardware — tell the display controller to use a normal
+        # windowed SDL driver when running locally.
+        self.display = DisplayController(SCREEN_WIDTH, SCREEN_HEIGHT, local=local)
+
         # Initialize power manager
         self.power_manager = PowerManager()
         self.power_manager.set_wake_callback(self._on_wake)
         self.power_manager.set_sleep_callback(self._on_sleep)
 
-        # Touch input thread (SDL offscreen mode does not read TSLIB events)
-        touch_dev = os.environ.get('SDL_MOUSEDEV', '/dev/input/touchscreen')
-        self.touch_thread = TouchInputThread(
-            device_path=touch_dev,
-            screen_w=SCREEN_WIDTH,
-            screen_h=SCREEN_HEIGHT
-        )
+        # Touch input thread — only needed on Pi hardware (evdev / ADS7846).
+        # In local mode SDL mouse events are used directly instead.
+        if not local:
+            touch_dev = os.environ.get('SDL_MOUSEDEV', '/dev/input/touchscreen')
+            self.touch_thread = TouchInputThread(
+                device_path=touch_dev,
+                screen_w=SCREEN_WIDTH,
+                screen_h=SCREEN_HEIGHT
+            )
+        else:
+            self.touch_thread = None
         
         # Application state
         self.current_screen = None
@@ -210,7 +219,7 @@ class HandheldDietScanner:
     def render(self):
         """Render the current screen"""
         screen = self.display.get_screen()
-        screen.fill(COLOR_LIGHT_YELLOW)
+        screen.fill(COLOR_BLACK)
         
         if self.state == "ALLERGY":
             self.current_screen.drawScreen(screen, self.profile_selected)
@@ -227,7 +236,7 @@ class HandheldDietScanner:
     def _draw_idle_warning(self, screen, remaining_time: float):
         """Draw idle warning message"""
         font = pygame.font.SysFont(None, 24)
-        text = font.render(f"Sleeping in {int(remaining_time)} seconds...", True, (255, 255, 0))
+        text = font.render(f"Sleeping in {int(remaining_time)} seconds...", True, COLOR_WHITE)
         screen.blit(text, (SCREEN_WIDTH // 2 - text.get_width() // 2, SCREEN_HEIGHT - 30))
     
     def _init_screens(self):
@@ -270,8 +279,9 @@ class HandheldDietScanner:
         # Initialize screens after display is ready
         self._init_screens()
 
-        # Start touch input thread now that pygame's event queue is live
-        self.touch_thread.start()
+        # Touch input thread is only used on Pi hardware.
+        if self.touch_thread is not None:
+            self.touch_thread.start()
 
         self.logger.info("Starting main loop")
         
@@ -287,7 +297,8 @@ class HandheldDietScanner:
     def shutdown(self):
         """Clean shutdown"""
         self.logger.info("Shutting down HandheldDietScanner")
-        self.touch_thread.stop()
+        if self.touch_thread is not None:
+            self.touch_thread.stop()
         self.display.shutdown()
         pygame.quit()
         self.logger.info("Shutdown complete")
@@ -295,8 +306,19 @@ class HandheldDietScanner:
 
 def main():
     """Entry point function"""
+    parser = argparse.ArgumentParser(description="Handheld Diet Scanner")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Run with a normal windowed display and mock camera — "
+            "no Pi framebuffer or hardware camera required."
+        ),
+    )
+    args = parser.parse_args()
+
     try:
-        app = HandheldDietScanner()
+        app = HandheldDietScanner(local=args.local)
         success = app.run_application()
         return 0 if success else 1
     except Exception as e:
